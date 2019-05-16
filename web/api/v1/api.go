@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"time"
 	"unsafe"
+  "encoding/json"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -226,6 +227,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_range", wrap(api.queryRange))
 	r.Post("/query_range", wrap(api.queryRange))
 
+  r.Get("/query_nasrange", wrap(api.queryNasRange))
+  r.Post("/query_nasrange", wrap(api.queryNasRange))
+
 	r.Get("/labels", wrap(api.labelNames))
 	r.Post("/labels", wrap(api.labelNames))
 	r.Get("/label/:name/values", wrap(api.labelValues))
@@ -314,6 +318,63 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+
+
+func (api *API) queryNasRange(r *http.Request) apiFuncResult {
+
+    type nasResult struct {
+        //Status string `json:"status"`
+        Value [2][]int64
+    }
+
+    type metricFomat struct {
+        Name string  `json:"__name__"`
+        Exported_job string
+        Job string
+        Instance string
+    }
+
+    type reFomat struct {
+        Metric metricFomat
+        Values []interface{}
+    }
+
+    type dataFomat struct {
+        ResultType string
+        Result []reFomat
+    }
+
+    nas := new(nasResult)
+
+    result := api.queryRange(r)
+
+    if result.data == nil && result.err != nil{
+        return result
+    }
+
+    data,err := json.Marshal(result.data)
+    if err != nil{
+        fmt.Println(err)
+    }
+
+    var test *dataFomat = new(dataFomat)
+    json.Unmarshal([]byte(data), test)
+
+    for in,_:= range  test.Result {
+        for _,v:= range  test.Result[in].Values{
+            dat,_ := json.Marshal(v)
+            var a int64
+            var b int64
+
+            fmt.Sscanf(string(dat),"[%d,\"%d\"]",&a,&b)
+            nas.Value[0] = append(nas.Value[0], a)
+            nas.Value[1] = append(nas.Value[1], b)
+        }
+    }
+
+    return apiFuncResult{nas, nil,nil,nil}
 }
 
 func (api *API) queryRange(r *http.Request) apiFuncResult {
